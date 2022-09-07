@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <DebugType>portable</DebugType>
+    <AssemblyName>LiftPassPricing</AssemblyName>
+    <PackageId>LiftPassPricing</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="6.0.8" />
+    <PackageReference Include="Microsoft.AspNetCore.Server.Kestrel" Version="2.2.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Owin" Version="2.2.0" />
+    <PackageReference Include="Nancy" Version="2.0.0-clinteastwood" />
+  </ItemGroup>
+
+</Project>
