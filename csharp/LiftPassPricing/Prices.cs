@@ -12,7 +12,6 @@ namespace LiftPassPricing
 
         public Prices()
         {
-
             Connection.Open();
 
             Put("/prices", _ =>
@@ -34,114 +33,57 @@ namespace LiftPassPricing
                 return "";
             });
 
-            Get("/prices", _ =>
+            base.Get("/prices", _ =>
             {
-                int? age = this.Request.Query["age"] != null ? Int32.Parse(this.Request.Query["age"]) : null;
+                int? age = this.Request.Query["age"] != null ? int.Parse(this.Request.Query["age"]) : null;
 
-                using (var costCmd = Connection.CreateCommand())
+                if (age != null && age < 6)
                 {
-                    string typeParam = (string)this.Request.Query["type"] ?? "" ;
-                    costCmd.CommandText = //
-                        "SELECT cost FROM base_price " + //
-                        "WHERE type = @type";
-                    costCmd.Parameters.Add(new("@type", SqliteType.Text) { Value = typeParam });
-                    costCmd.Prepare();
-                    double result = (long)costCmd.ExecuteScalar();
-
-                    int reduction;
-                    var isHoliday = false;
-
-                    if (age != null && age < 6)
-                    {
-                        return "{ \"cost\": 0}";
-                    }
-                    else
-                    {
-                        reduction = 0;
-
-                        if (!"night".Equals(this.Request.Query["type"]))
-                        {
-                            using (var holidayCmd = Connection.CreateCommand())
-                            {
-                                holidayCmd.CommandText = "SELECT * FROM holidays";
-                                holidayCmd.Prepare();
-                                using (var holidays = holidayCmd.ExecuteReader())
-                                {
-
-                                    while (holidays.Read())
-                                    {
-                                        var holiday = holidays.GetDateTime("holiday");
-                                        if (this.Request.Query["date"] != null)
-                                        {
-                                            DateTime d = DateTime.ParseExact(this.Request.Query["date"], "yyyy-MM-dd", CultureInfo.InvariantCulture);
-                                            if (d.Year == holiday.Year &&
-                                                d.Month == holiday.Month &&
-                                                d.Date == holiday.Date)
-                                            {
-                                                isHoliday = true;
-                                            }
-                                        }
-                                    }
-
-                                }
-                            }
-
-                            if (this.Request.Query["date"] != null)
-                            {
-                                DateTime d = DateTime.ParseExact(this.Request.Query["date"], "yyyy-MM-dd", CultureInfo.InvariantCulture);
-                                if (!isHoliday && (int)d.DayOfWeek == 1)
-                                {
-                                    reduction = 35;
-                                }
-                            }
-
-                            // TODO apply reduction for others
-                            if (age != null && age < 15)
-                            {
-                                return "{ \"cost\": " + (int)Math.Ceiling(result * .7) + "}";
-                            }
-                            else
-                            {
-                                if (age == null)
-                                {
-                                    double cost = result * (1 - reduction / 100.0);
-                                    return "{ \"cost\": " + (int)Math.Ceiling(cost) + "}";
-                                }
-                                else
-                                {
-                                    if (age > 64)
-                                    {
-                                        double cost = result * .75 * (1 - reduction / 100.0);
-                                        return "{ \"cost\": " + (int)Math.Ceiling(cost) + "}";
-                                    }
-                                    else
-                                    {
-                                        double cost = result * (1 - reduction / 100.0);
-                                        return "{ \"cost\": " + (int)Math.Ceiling(cost) + "}";
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (age != null && age >= 6)
-                            {
-                                if (age > 64)
-                                {
-                                    return "{ \"cost\": " + (int)Math.Ceiling(result * .4) + "}";
-                                }
-                                else
-                                {
-                                    return "{ \"cost\": " + result + "}";
-                                }
-                            }
-                            else
-                            {
-                                return "{ \"cost\": 0}";
-                            }
-                        }
-                    }
+                    return GetResultString(0);
                 }
+
+                string typeParam = (string)this.Request.Query["type"] ?? "";
+                double baseTypeCost = GetBaseCostForType(typeParam);
+
+                int reduction;
+
+                DateTime d = DateTime.ParseExact(this.Request.Query["date"], "yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+                reduction = 0;
+
+                if (typeParam is not "night")
+                {
+                    bool isHoliday = CheckIfHoliday(d);
+
+                    if (!isHoliday && d.DayOfWeek == DayOfWeek.Monday)
+                    {
+                        reduction = 35;
+                    }
+
+                    // TODO apply reduction for others
+                    if (age != null && age < 15)
+                    {
+                        return GetResultString((int)Math.Ceiling(baseTypeCost * .7));
+                    }
+
+                    if (age is null || age <= 64)
+                    {
+                        double cost1 = baseTypeCost * (1 - reduction / 100.0); // todo: combine the costs
+                        return GetResultString((int)Math.Ceiling(cost1));
+                    }
+                    double cost = baseTypeCost * .75 * (1 - reduction / 100.0);
+                    return GetResultString((int)Math.Ceiling(cost));
+
+                }
+                if (age != null && age >= 6)
+                {
+                    if (age > 64)
+                    {
+                        return GetResultString((int)Math.Ceiling(baseTypeCost * .4));
+                    }
+                    return GetResultString((int)baseTypeCost);
+                }
+                return GetResultString(0);
             });
 
             After += ctx =>
@@ -151,5 +93,44 @@ namespace LiftPassPricing
 
         }
 
+        private bool CheckIfHoliday(DateTime date)
+        {
+            SqliteCommand holidayCmd = Connection.CreateCommand();
+            holidayCmd.CommandText = "SELECT * FROM holidays";
+            holidayCmd.Prepare();
+            SqliteDataReader holidays = holidayCmd.ExecuteReader();
+            while (holidays.Read())
+            {
+                var holiday = holidays.GetDateTime("holiday");
+                if (this.Request.Query["date"] != null)
+                {
+                    if (date.Year == holiday.Year &&
+                        date.Month == holiday.Month &&
+                        date.Date == holiday.Date)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static string GetResultString(int cost)
+        {
+            return "{ \"cost\": " + cost + "}";
+        }
+
+        private double GetBaseCostForType(string typeParam)
+        {
+            const string priceQuery = "SELECT cost FROM base_price WHERE type = @type";
+
+            using (var costCmd = Connection.CreateCommand())
+            {
+                costCmd.CommandText = priceQuery;
+                costCmd.Parameters.Add(new("@type", SqliteType.Text) { Value = typeParam });
+                costCmd.Prepare();
+                return (long)costCmd.ExecuteScalar();
+            }
+        }
     }
 }
